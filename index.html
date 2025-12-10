@@ -1,0 +1,218 @@
+<script>
+    const pig = document.getElementById("pig");
+    const pigMouth = document.getElementById("pig-mouth");
+    const obstacle = document.getElementById("obstacle");
+    const uiLayer = document.getElementById("ui-layer");
+    const titleMsg = document.getElementById("title-msg");
+    const subMsg = document.getElementById("subtitle-msg");
+    const scoreSpan = document.getElementById("score");
+    const levelSpan = document.getElementById("level");
+    const gameContainer = document.getElementById("game-container");
+    const musicBtn = document.getElementById("music-btn");
+    const audio = document.getElementById("bg-music");
+
+    let isGameRunning = false;
+    let score = 0;
+    let level = 1;
+    const ROUND_SCORE = 15;
+
+    let scoreInterval;
+    let collisionCheck;
+
+    // --- ADJUSTMENT 1: Slower Starting Speed ---
+    // Increased from 3.0s to 4.0s for easier Level 1
+    const BASE_SPEED = 4.0;
+    // Speed increment per level (Keep the challenge coming)
+    const SPEED_INCREMENT = 0.5;
+
+    // --- ADJUSTMENT 2: Quicker Jump Timing ---
+    const JUMP_DURATION_MS = 550; // Total jump duration in CSS is 0.6s (600ms), we stop the class slightly faster.
+
+    // --- Mouth SVG Paths for Emotion ---
+    const MOUTH_NEUTRAL = "M 40 70 Q 50 65 60 70";
+    const MOUTH_SAD = "M 35 75 Q 50 60 65 75";
+    const MOUTH_HAPPY = "M 30 70 Q 50 90 70 70";
+
+    // --- Music ---
+    function playMusic() {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+            playPromise.then(_ => {
+                musicBtn.innerText = "🎵 Music: ON";
+            }).catch(error => {
+                // Autoplay failed
+            });
+        }
+    }
+    playMusic();
+
+    function toggleMusic(e) {
+        e.stopPropagation();
+        if (audio.paused) {
+            audio.play();
+            musicBtn.innerText = "🎵 Music: ON";
+        } else {
+            audio.pause();
+            musicBtn.innerText = "🎵 Music: OFF";
+        }
+    }
+
+    // --- Game Setup ---
+    function startGame(e) {
+        if(e) e.stopPropagation();
+
+        if (audio.paused) {
+            audio.play().then(() => musicBtn.innerText = "🎵 Music: ON").catch(e => console.log("Music play failed on start:", e));
+        }
+
+        // Reset state
+        isGameRunning = true;
+        if(level === 1) score = 0;
+        scoreSpan.innerText = score % ROUND_SCORE;
+        uiLayer.classList.add("hidden");
+        pigMouth.setAttribute("d", MOUTH_NEUTRAL);
+
+        // Update Level Speed
+        const currentDuration = BASE_SPEED - (level - 1) * SPEED_INCREMENT;
+        obstacle.style.animationDuration = `${currentDuration}s`;
+        console.log(`Level ${level}, Speed: ${currentDuration.toFixed(2)}s`);
+
+        // Start Obstacle animation
+        obstacle.classList.remove("animate-obstacle");
+        void obstacle.offsetWidth;
+        obstacle.classList.add("animate-obstacle");
+
+        // Start Scoring
+        scoreInterval = setInterval(() => {
+            score++;
+            scoreSpan.innerText = score % ROUND_SCORE || ROUND_SCORE;
+
+            if(score % ROUND_SCORE === 0) {
+                levelComplete();
+            }
+        }, 1000);
+
+        // Start Collision Check
+        collisionCheck = setInterval(checkDead, 10);
+    }
+
+    function stopGame() {
+        isGameRunning = false;
+        obstacle.classList.remove("animate-obstacle");
+        clearInterval(scoreInterval);
+        clearInterval(collisionCheck);
+    }
+
+    function jump() {
+        if (!isGameRunning) return;
+        if (pig.classList.contains("animate-jump")) return;
+
+        pig.classList.add("animate-jump");
+        // --- ADJUSTMENT 2: Quicker Jump Timing ---
+        // Remove the jump class slightly before the animation physically finishes
+        // This makes the pig "land" and ready to jump again sooner.
+        setTimeout(() => { pig.classList.remove("animate-jump"); }, JUMP_DURATION_MS);
+    }
+
+    document.body.onkeyup = function(e) {
+        if (e.code === "Space") {
+            if(!isGameRunning && !uiLayer.classList.contains("hidden")) startGame();
+            else jump();
+        }
+    }
+
+    // --- Win / Loss ---
+    function checkDead() {
+        let pigTop = parseInt(window.getComputedStyle(pig).getPropertyValue("top"));
+        let pigLeft = parseInt(window.getComputedStyle(pig).getPropertyValue("left"));
+        let obstacleLeft = parseInt(window.getComputedStyle(obstacle).getPropertyValue("left"));
+
+        const PIG_WIDTH = 70;
+        const OBSTACLE_WIDTH = 40;
+        const PIG_Y_COLLISION_LINE = 210;
+        const PIG_X_START = 50;
+
+        const pigXRight = PIG_X_START + PIG_WIDTH;
+        const obstacleXRight = obstacleLeft + OBSTACLE_WIDTH;
+
+        const isCollidingX = (pigXRight > obstacleLeft) && (PIG_X_START < obstacleXRight);
+        const isOnGround = pigTop >= PIG_Y_COLLISION_LINE - 10;
+
+        if (isCollidingX && isOnGround) {
+            gameOver();
+        }
+    }
+
+    function gameOver() {
+        stopGame();
+        pigMouth.setAttribute("d", MOUTH_SAD);
+
+        titleMsg.innerText = `GAME OVER! (Level ${level})`;
+        subMsg.innerText = `You reached ${score} total jumps. Restart?`;
+        uiLayer.querySelector("button").innerText = "RESTART GAME";
+        level = 1;
+        levelSpan.innerText = level;
+
+        uiLayer.classList.remove("hidden");
+    }
+
+    function levelComplete() {
+        stopGame();
+
+        if (level >= 3) {
+            gameWin();
+            return;
+        }
+
+        level++;
+        levelSpan.innerText = level;
+
+        titleMsg.innerText = `LEVEL ${level-1} COMPLETE!`;
+        subMsg.innerHTML = `Prepare for **Level ${level}**! The Turnips are faster now!`;
+        uiLayer.querySelector("button").innerText = "CONTINUE";
+        uiLayer.querySelector("button").style.backgroundColor = '#2ecc71';
+        uiLayer.querySelector("button").style.boxShadow = '0 6px #27ae60';
+
+        uiLayer.querySelector("button").onclick = continueGame;
+        uiLayer.classList.remove("hidden");
+    }
+
+    function continueGame(e) {
+        uiLayer.querySelector("button").style.backgroundColor = '#e74c3c';
+        uiLayer.querySelector("button").style.boxShadow = '0 6px #c0392b';
+        uiLayer.querySelector("button").onclick = startGame;
+
+        titleMsg.innerText = `Pig Jump: Level ${level}`;
+        subMsg.innerText = `Tap / Spacebar to Play. Complete 15 Jumps to Level Up!`;
+
+        startGame(e);
+    }
+
+    function gameWin() {
+        pigMouth.setAttribute("d", MOUTH_HAPPY);
+
+        titleMsg.innerText = "ULTIMATE VICTORY!";
+        subMsg.innerText = `The Pig is Happy! You beat Level ${level}! 🐷`;
+        uiLayer.querySelector("button").innerText = "PLAY AGAIN";
+        uiLayer.querySelector("button").style.backgroundColor = '#f1c40f';
+        uiLayer.querySelector("button").style.boxShadow = '0 6px #f39c12';
+
+        level = 1;
+        levelSpan.innerText = level;
+
+        uiLayer.classList.remove("hidden");
+        createConfetti();
+    }
+
+    function createConfetti() {
+        for(let i=0; i<30; i++) {
+            let conf = document.createElement("div");
+            conf.classList.add("confetti");
+            conf.style.left = Math.random() * 600 + "px";
+            conf.style.backgroundColor = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            conf.style.animationDuration = (Math.random() * 1.5 + 1) + "s";
+            gameContainer.appendChild(conf);
+            setTimeout(() => conf.remove(), 2500);
+        }
+    }
+</script>
